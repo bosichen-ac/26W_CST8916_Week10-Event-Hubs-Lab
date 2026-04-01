@@ -14,6 +14,8 @@ import os
 import json
 import threading
 from datetime import datetime, timezone
+from dotenv import load_dotenv
+from user_agents import parse
 
 from flask import Flask, jsonify, request, send_from_directory, abort
 from flask_cors import CORS
@@ -38,13 +40,21 @@ CORS(app)
 #
 # On Azure App Service, set them as Application Settings in the portal.
 # ---------------------------------------------------------------------------
+load_dotenv()
 CONNECTION_STR = os.environ.get("EVENT_HUB_CONNECTION_STR", "")
 EVENT_HUB_NAME = os.environ.get("EVENT_HUB_NAME", "clickstream")
+DEVICES_HUB_NAME = os.environ.get("DEVICES_HUB_NAME", "devices")
+SPIKES_HUB_NAME = os.environ.get("SPIKES_HUB_NAME", "spikes")
 
 # In-memory buffer: stores the last 50 events received by the consumer thread.
 # In a production system you would query a database or Azure Stream Analytics output.
 _event_buffer = []
 _buffer_lock = threading.Lock()
+analytics_data = {
+    "devices": {},
+    "traffic": 0
+}
+analytics_lock = threading.Lock()
 MAX_BUFFER = 50
 
 
@@ -92,6 +102,42 @@ def _on_event(partition_context, event):
     partition_context.update_checkpoint(event)
 
 
+def _on_devices_event(partition_context, event):
+    global _device_stats
+    body = event.body_as_str(encoding="UTF-8")
+    try:
+        data = json.loads(body)
+    except:
+        return
+    
+    device = data.get("deviceType")
+    count = data.get("event_count")
+
+    # if device:
+    #     _device_stats[device] = count
+    with analytics_lock:
+        analytics_data["devices"][device] = count
+
+    partition_context.update_checkpoint(event)
+
+
+def _on_spikes_event(partition_context, event):
+    global _spike_count
+    body = event.body_as_str(encoding="UTF-8")
+    try:
+        data = json.loads(body)
+    except:
+        return
+    
+    # _spike_count = data.get("event_count", 0)
+    count = data.get("event_count")
+
+    with analytics_lock:
+        analytics_data["traffic"] = count
+
+    partition_context.update_checkpoint(event)
+
+
 def start_consumer():
     """Start the Event Hubs consumer in a background daemon thread.
 
@@ -128,6 +174,38 @@ def start_consumer():
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
     app.logger.info("Event Hubs consumer thread started")
+
+
+def start_analytics_consumers():
+
+    devices_consumer = EventHubConsumerClient.from_connection_string(
+        conn_str=CONNECTION_STR,
+        consumer_group="$Default",
+        eventhub_name=DEVICES_HUB_NAME,
+    )
+
+    spikes_consumer = EventHubConsumerClient.from_connection_string(
+        conn_str=CONNECTION_STR,
+        consumer_group="$Default",
+        eventhub_name=SPIKES_HUB_NAME,
+    )
+
+    def run_devices():
+        with devices_consumer:
+            devices_consumer.receive(
+                on_event=_on_devices_event,
+                starting_position="-1",
+            )
+
+    def run_spikes():
+        with spikes_consumer:
+            spikes_consumer.receive(
+                on_event=_on_spikes_event,
+                starting_position="-1",
+            )
+
+    threading.Thread(target=run_devices, daemon=True).start()
+    threading.Thread(target=run_spikes, daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +246,16 @@ def track():
     if not request.json:
         abort(400)
 
+    ua_string = request.headers.get("User-Agent", "")
+    ua = parse(ua_string)
+
+    if ua.is_mobile:
+        device_type = "mobile"
+    elif ua.is_tablet:
+        device_type = "tablet"
+    else:
+        device_type = "desktop"
+
     # Enrich the event with a server-side timestamp
     event = {
         "event_type": request.json.get("event_type", "unknown"),
@@ -175,6 +263,9 @@ def track():
         "product_id": request.json.get("product_id"),
         "user_id":    request.json.get("user_id", "anonymous"),
         "timestamp":  datetime.now(timezone.utc).isoformat(),
+        "deviceType": device_type,
+        "browser":    ua.browser.family,
+        "os":         ua.os.family,
     }
 
     send_to_event_hubs(event)
@@ -218,11 +309,18 @@ def get_events():
     return jsonify({"events": recent, "summary": summary, "total": len(recent)}), 200
 
 
+@app.route("/api/analytics", methods=["GET"])
+def analytics():
+    with analytics_lock:
+        return jsonify(analytics_data), 200
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     # Start the background consumer so the dashboard receives live events
     start_consumer()
+    start_analytics_consumers()
     # Run on 0.0.0.0 so it is reachable both locally and inside Azure App Service
     app.run(debug=False, host="0.0.0.0", port=8000)

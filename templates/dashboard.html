@@ -189,6 +189,20 @@
     </div>
   </div>
 
+  <!-- stream analytics -->
+  <div class="panel" style="max-width:400px;">
+    <h3>Stream Analytics</h3>
+    <div id="device-chart">
+      <p style="color:#484f58; font-size:0.85rem;">Waiting for analytics...</p>
+    </div>
+    <div style="margin-top:16px;">
+      <div class="label" style="font-size:0.75rem;color:#8b949e;text-transform:uppercase;">
+        Traffic (last 10s window)
+      </div>
+      <div class="value" id="traffic-count" style="font-size:1.8rem;color:#3fb950;">–</div>
+    </div>
+  </div>
+
   <!-- Live event feed -->
   <div class="panel">
     <h3>Live Event Feed (from Azure Event Hubs)</h3>
@@ -227,6 +241,16 @@
         renderFeed(data.events);
       })
       .catch(err => console.error("Poll error:", err));
+  }
+
+  function fetchAnalytics() {
+    fetch("/api/analytics")
+    .then(res => res.json())
+    .then(data => {
+      renderDeviceChart(data.devices || {});
+      renderTraffic(data.traffic || 0);
+    })
+    .catch(err => console.error("Analytics poll error:", err));
   }
 
   // ── KPI cards ────────────────────────────────────────────────
@@ -283,9 +307,41 @@
     });
   }
 
+  function renderDeviceChart(devices) {
+    const container = document.getElementById("device-chart");
+    if (!devices || Object.keys(devices).length === 0) return;
+
+    const maxVal = Math.max(...Object.values(devices), 1);
+    container.innerHTML = "";
+
+    Object.entries(devices).forEach(([type, count]) => {
+      const pct = (count / maxVal * 100).toFixed(1);
+
+      const row = document.createElement("div");
+      row.className = "bar-row";
+
+      row.innerHTML = `
+        <div class="bar-label">${type}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+        <div class="bar-count">${count}</div>
+      `;
+
+      container.appendChild(row);
+    });
+  }
+
+  function renderTraffic(count) {
+    document.getElementById("traffic-count").textContent = count;
+  }
+
   // Kick off polling immediately, then repeat
   fetchAndRender();
-  setInterval(fetchAndRender, POLL_INTERVAL_MS);
+  fetchAnalytics();
+
+  setInterval(() => {
+    fetchAndRender();
+    fetchAnalytics();
+  }, POLL_INTERVAL_MS);
 </script>
 </body>
 </html>
