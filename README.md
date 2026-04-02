@@ -53,7 +53,7 @@ Azure Services
 
 Environment Variables
 
-EVENT_HUB_CONNECTION_STR=
-EVENT_HUB_NAME=clickstream
-EVENT_HUB_DEVICES=devices
-EVENT_HUB_SPIKES=spikes
+- EVENT_HUB_CONNECTION_STR=
+- EVENT_HUB_NAME=clickstream
+- EVENT_HUB_DEVICES=devices
+- EVENT_HUB_SPIKES=spikes
