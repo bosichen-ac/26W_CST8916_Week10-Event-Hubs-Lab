@@ -19,13 +19,13 @@
 flowchart TB
 
 A[Browser] --> B[Azure App Service]
-B --> C[Azure Event Hubs (clickstream)]
+B --> C[Azure Event Hub clickstream]
 C --> D[Azure Stream Analytics]
 D --> E[Event Hub devices]
 D --> F[Event Hub spikes]
-E --> G[Flask API (/api/analytics)]
+E --> G[Flask API /api/analytics]
 F --> G
-G --> H[Dashboard (dashboard.html)]
+G --> H[dashboard.html]
 
 ```
 
