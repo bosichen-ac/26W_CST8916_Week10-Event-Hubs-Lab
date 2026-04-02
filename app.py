@@ -315,12 +315,12 @@ def analytics():
         return jsonify(analytics_data), 200
 
 
+start_consumer()
+start_analytics_consumers()
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     # Start the background consumer so the dashboard receives live events
-    start_consumer()
-    start_analytics_consumers()
     # Run on 0.0.0.0 so it is reachable both locally and inside Azure App Service
     app.run(debug=False, host="0.0.0.0", port=8000)
