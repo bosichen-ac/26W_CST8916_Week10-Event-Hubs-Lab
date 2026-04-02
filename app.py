@@ -1,3 +1,6 @@
+# Used ChatGPT to generate code for getting the device type, browser, and os
+# Used ChatGPT to generate code for reading the SAQL result from the event hub
+
 # CST8916 – Week 10 Lab: Clickstream Analytics with Azure Event Hubs
 #
 # This Flask app has two roles:
